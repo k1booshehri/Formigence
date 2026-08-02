@@ -1,26 +1,47 @@
-import { Link, Route, Routes } from 'react-router-dom';
+/**
+ * Route table.
+ *
+ * A data router (`createBrowserRouter`) rather than `<BrowserRouter>`, because
+ * `useBlocker` — the unsaved-changes guard in the builder — only works with one.
+ */
+import { Navigate, createBrowserRouter } from 'react-router-dom';
 
-import PublicQuestionnairePage from './pages/PublicQuestionnairePage';
-import SignInPage from './pages/SignInPage';
+import { AppLayout } from '@/components/layout/AppLayout';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
+import BuilderPage from '@/pages/BuilderPage';
+import LoginPage from '@/pages/LoginPage';
+import NotFoundPage from '@/pages/NotFoundPage';
+import PublicQuestionnairePage from '@/pages/PublicQuestionnairePage';
+import PublicResultPage from '@/pages/PublicResultPage';
+import QuestionnairesPage from '@/pages/QuestionnairesPage';
+import ResponsesPage from '@/pages/ResponsesPage';
+import { RootBoundary } from '@/components/RootBoundary';
 
-export default function App() {
-  return (
-    <div className="min-h-screen">
-      <header className="border-b border-slate-200 bg-white">
-        <nav className="mx-auto flex max-w-3xl items-center gap-4 px-6 py-4">
-          <Link to="/" className="font-semibold">
-            Formigence
-          </Link>
-          <span className="text-sm text-slate-500">assessment platform</span>
-        </nav>
-      </header>
-      <main className="mx-auto max-w-3xl px-6 py-10">
-        <Routes>
-          <Route path="/" element={<SignInPage />} />
-          <Route path="/q/:slug" element={<PublicQuestionnairePage />} />
-          <Route path="*" element={<p className="text-slate-600">Not found.</p>} />
-        </Routes>
-      </main>
-    </div>
-  );
-}
+export const router = createBrowserRouter([
+  { path: '/', element: <Navigate to="/app/questionnaires" replace /> },
+  { path: '/login', element: <LoginPage />, errorElement: <RootBoundary /> },
+  {
+    path: '/app',
+    element: <ProtectedRoute />,
+    errorElement: <RootBoundary />,
+    children: [
+      {
+        element: <AppLayout />,
+        children: [
+          { index: true, element: <Navigate to="/app/questionnaires" replace /> },
+          { path: 'questionnaires', element: <QuestionnairesPage /> },
+          { path: 'questionnaires/new', element: <BuilderPage /> },
+          { path: 'questionnaires/:id/edit', element: <BuilderPage /> },
+          { path: 'questionnaires/:id/responses', element: <ResponsesPage /> },
+        ],
+      },
+    ],
+  },
+  { path: '/q/:slug', element: <PublicQuestionnairePage />, errorElement: <RootBoundary /> },
+  {
+    path: '/q/:slug/result/:responseId',
+    element: <PublicResultPage />,
+    errorElement: <RootBoundary />,
+  },
+  { path: '*', element: <NotFoundPage /> },
+]);

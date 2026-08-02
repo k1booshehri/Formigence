@@ -6,9 +6,10 @@ Respondents answer through that link; their answers plus the guide go to the
 Anthropic API, which returns a structured recommendation.
 
 Built so far: passwordless auth, questionnaire CRUD, the public read and submit
-endpoints, and the background analysis pipeline with per-owner token accounting.
-Payments, the builder UI, and a durable job queue are not built — see
-[What is not built](#what-is-not-built).
+endpoints, the background analysis pipeline with per-owner token accounting, and
+the full web app — owner dashboard, questionnaire builder, publishing, responses
+view, and the respondent flow. Payments and a durable job queue are not built —
+see [What is not built](#what-is-not-built).
 
 ---
 
@@ -19,7 +20,7 @@ Payments, the builder UI, and a durable job queue are not built — see
 | Backend   | Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2.0 (async), Alembic, PostgreSQL 16, asyncpg |
 | Auth      | Email OTP (passwordless) → short-lived JWT access token + DB-backed rotating refresh token |
 | Analysis  | Anthropic Python SDK (async), forced tool call for structured output, FastAPI `BackgroundTasks` |
-| Frontend  | React 18, TypeScript, Vite, Tailwind CSS, TanStack Query, React Router (scaffold only) |
+| Frontend  | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui conventions, TanStack Query, React Router, React Hook Form + Zod |
 | Tooling   | uv, ruff, mypy, pytest; pnpm, eslint, tsc; Docker Compose for local Postgres |
 
 ---
@@ -63,10 +64,13 @@ including the whole test suite — works without it; a submission simply ends up
 
 ```bash
 cd frontend
-cp .env.example .env.local
+cp .env.example .env.local    # VITE_API_BASE_URL, defaults to http://localhost:8000
 pnpm install
 pnpm dev                      # http://localhost:5173
 ```
+
+The backend's `CORS_ORIGINS` already allows `http://localhost:5173`, so the two
+dev servers work together with no extra configuration.
 
 ### 4. Checks
 
@@ -82,10 +86,33 @@ uv run pytest
 cd frontend
 pnpm lint
 pnpm typecheck
+pnpm test
 ```
 
 `pytest` creates and manages its own database (`TEST_DATABASE_URL`, default
 `formigence_test`); it never touches the development database.
+
+### 5. End to end
+
+With Postgres, the API, and the dev server all running:
+
+1. <http://localhost:5173> → redirected to `/login`.
+2. Enter an email, then read the six-digit code from the **backend console**
+   (`EMAIL_BACKEND=console`) and enter it.
+3. Create a questionnaire, add a question of each type, and save.
+4. Publish, then copy the public link.
+5. Open the link in a private window, answer, and submit — you land on the
+   result page, which polls until the recommendation appears.
+6. Back in the dashboard, open **Responses** to see the submission and its
+   result.
+
+Analysis needs `ANTHROPIC_API_KEY`. Without it the submission still succeeds
+and the result page shows the "could not complete the analysis" state, which is
+also a useful way to see that path.
+
+> The public submit endpoint is rate limited to 5/hour per IP by default
+> (`RESPONSE_SUBMIT_RATE_LIMIT_PER_IP`) — raise it, or set
+> `RATE_LIMIT_ENABLED=false`, while clicking through the flow repeatedly.
 
 ---
 
@@ -272,7 +299,13 @@ backend/
                 captcha, email
   alembic/      migration environment + versions
   tests/
-frontend/       Vite React-TS scaffold
+frontend/
+  src/
+    api/        Zod schemas mirroring the backend, fetch client, endpoints
+    components/ ui primitives, builder, public form, layout
+    hooks/      useAuth, useQuestionnaires, useResponses, useResponsePolling
+    pages/      login, dashboard, builder, responses, public flow
+    test/       shared test helpers
 docker-compose.yml
 ```
 
@@ -291,6 +324,66 @@ docker-compose.yml
   `input_tokens`, `output_tokens`, `created_at`. The questionnaire and response
   references are nullable with `ON DELETE SET NULL`, so deleting content does
   not erase the billing record it produced; `owner_id` cascades.
+
+---
+
+## The frontend
+
+### Routes
+
+| Route | Auth | What it is |
+|-------|------|------------|
+| `/login` | — | Email step, then code step. Resend has a 30s cooldown. |
+| `/app/questionnaires` | Session | Dashboard: list, create, delete |
+| `/app/questionnaires/new` | Session | Builder |
+| `/app/questionnaires/:id/edit` | Session | Builder + publish panel |
+| `/app/questionnaires/:id/responses` | Session | Paginated responses, expandable detail |
+| `/q/:slug` | — | Respondent form, mobile first |
+| `/q/:slug/result/:responseId` | — | Polls for the recommendation |
+
+### One place for fetch logic
+
+`src/api/client.ts` is the only module that calls `fetch`. It attaches the
+access token, and on a 401 it attempts **one** refresh and replays the request.
+Concurrent 401s share a single refresh promise — the refresh token rotates
+server-side, so parallel refreshes would invalidate each other and sign the user
+out. When refresh fails it clears the tokens; `useAuth` subscribes to that store
+and `ProtectedRoute` redirects. No component calls `window.location`.
+
+Every response is parsed with the Zod schema the caller expects, so a drift
+between the backend schemas and `src/api/schemas.ts` surfaces as a loud
+`ApiContractError` at the boundary rather than as `undefined` inside a
+component.
+
+### Schemas mirror the backend
+
+`src/api/schemas.ts` restates each backend constraint with the same bound and
+names the Python constant beside it. `answersSchemaFor()` mirrors
+`backend/app/services/answers.py`, so the respondent form rejects what the
+server would reject. `src/api/__tests__/schemas.test.ts` runs the same accept
+and reject cases as the backend's own suite.
+
+One backend constraint shapes the builder: `QuestionnaireCreate.questions` has
+`min_length=1`, so a questionnaire cannot be created with zero questions. Save
+is therefore only possible once at least one question exists.
+
+### Notes
+
+- **`z.union`, not `z.discriminatedUnion`.** The question members carry
+  `.refine()` wrappers (unique options, `max > min`), which produce `ZodEffects`
+  — and `discriminatedUnion` rejects those. The `type` literal still gives
+  TypeScript a discriminated union to narrow on.
+- **Options are not a `useFieldArray`.** That hook attaches an `id` to every
+  element and so only supports arrays of objects; the API's options are plain
+  strings, so they are edited with `useWatch` + `setValue`.
+- **A data router.** `createBrowserRouter` rather than `<BrowserRouter>`,
+  because the builder's unsaved-changes guard uses `useBlocker`, which needs
+  one. `beforeunload` covers closing the tab.
+- **Question ids are generated and never change.** They are the keys of every
+  stored answer, so editing one would orphan answers already collected.
+- **`exactOptionalPropertyTypes` is off** (it was on in the phase 1 scaffold).
+  React Hook Form hands `undefined` to optional fields routinely, and the flag
+  makes that a type error for no real safety gain here.
 
 ---
 
@@ -343,8 +436,8 @@ docker-compose.yml
 Out of scope for this milestone, by design:
 
 - Payments
-- The frontend questionnaire builder UI. The Vite scaffold from the previous
-  milestone is untouched, so its API client does not yet know about responses.
+- Team features, analytics charts, drag-and-drop reordering (the builder uses
+  up/down buttons)
 - A real job queue. Analysis runs in FastAPI `BackgroundTasks`, which means
   in-flight work is lost if the process restarts and there is no retry across
   restarts. `run_analysis_for_response()` is already shaped to be called from a
@@ -358,26 +451,40 @@ Out of scope for this milestone, by design:
 
 ## Verification status
 
-The environment this was built in blocks outbound access to `pypi.org` and
-`registry.npmjs.org` at the network-policy level (`403`,
-`x-deny-reason: host_not_allowed`), so project dependencies could not be
-installed here — in this milestone as in the previous one. What that means
-concretely:
+Every milestone so far has been built in an environment whose network policy
+blocks `pypi.org` and `registry.npmjs.org` (`403`,
+`x-deny-reason: host_not_allowed`). For this frontend milestone that is a
+sharper limit than before: **`pnpm install` cannot run**, so `tsc`, `eslint` and
+`vitest` cannot run either.
 
 | Check | Status |
 |-------|--------|
-| `ruff check .` | **Passes** (ruff runs standalone from a local cache) |
-| `ruff format --check .` | **Passes** |
-| Byte-compilation of all backend sources | **Passes** |
-| `mypy` | **Not run as configured.** Without pydantic installed the plugin cannot load. A plugin-less `--strict` run over 53 files reports only `Class cannot subclass "X" (has type "Any")` and `Returning Any` — every one an artifact of the absent packages, none an internal type error. |
-| `pytest` | **Not run.** Requires fastapi/sqlalchemy/asyncpg/anthropic. |
-| `pnpm lint` / `pnpm typecheck` | **Not run.** `pnpm install` fails with `ERR_PNPM_FETCH_403`. |
+| Every `.ts`/`.tsx` file parses (TypeScript compiler API, 41 files) | **Passes** |
+| Every local import resolves, and every named import exists in its target | **Passes** |
+| No unused imports | **Passes** |
+| `pnpm typecheck` (`tsc -b`) | **Not run.** No `node_modules`. |
+| `pnpm lint` | **Not run.** No `node_modules`. |
+| `pnpm test` (Vitest) | **Not run.** No `node_modules`. |
+| End-to-end via docker compose + both dev servers | **Not run.** The Docker daemon is also unavailable, and the backend dependencies are equally uninstallable. |
+| Backend `ruff check` / `ruff format --check` | **Passes** (ruff runs standalone from a local cache) |
+| Backend `pytest` / `mypy` | **Not run** — unchanged from the previous milestone. |
 
-Run the [Checks](#4-checks) section on a machine with normal registry access to
-confirm. Treat the test suite as unverified until then.
+What the static checks do and do not cover: they catch syntax errors, wrong
+import paths, and imports of names that do not exist — a real class of bug — but
+they say nothing about type correctness. Treat the frontend as **written but
+unverified**.
 
-The suite never contacts the Anthropic API: `tests/fakes.py` supplies a
-`FakeAnalyzer` for pipeline and endpoint tests and a `FakeAnthropicClient` that
-scripts the SDK surface for tests of the real analyzer, including prompt
-assembly and retry behaviour. Running `pytest` therefore needs a database but
-not an `ANTHROPIC_API_KEY`.
+The highest-risk unverified areas, in order:
+
+1. **React Hook Form path typing in the builder.** Registering into a
+   discriminated union (`schema.0.options.0`) is where TypeScript is most
+   likely to complain; those calls carry a documented
+   `FieldPath<QuestionnaireFormValues>` cast, and the casts may need adjusting.
+2. **Library API drift.** `useBlocker` must be exported unprefixed by the
+   installed `react-router-dom` (it is, from 6.19), and `refetchInterval`'s
+   callback receives the query object (TanStack Query v5).
+3. **Test selectors.** Role and label queries are written against the markup in
+   this repo but have never been run.
+
+Run the [Checks](#4-checks) and [End to end](#5-end-to-end) sections on a
+machine with normal registry access to confirm.
