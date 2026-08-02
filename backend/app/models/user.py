@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
 if TYPE_CHECKING:
+    from app.models.api_usage import ApiUsage
     from app.models.otp_code import OtpCode
     from app.models.questionnaire import Questionnaire
     from app.models.refresh_token import RefreshToken
@@ -32,5 +33,8 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
     questionnaires: Mapped[list[Questionnaire]] = relationship(
+        back_populates="owner", cascade="all, delete-orphan"
+    )
+    api_usage: Mapped[list[ApiUsage]] = relationship(
         back_populates="owner", cascade="all, delete-orphan"
     )

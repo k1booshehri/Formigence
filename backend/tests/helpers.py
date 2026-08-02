@@ -82,3 +82,48 @@ def sample_questionnaire_payload(**overrides: Any) -> dict[str, Any]:
     }
     payload.update(overrides)
     return payload
+
+
+def sample_answers(**overrides: Any) -> dict[str, Any]:
+    """A valid answer set for `sample_questions()`."""
+    answers: dict[str, Any] = {
+        "q1": ["Retail", "Online"],
+        "q2": 4,
+        "q3": "Finding time to work on the business rather than in it.",
+    }
+    answers.update(overrides)
+    return answers
+
+
+async def publish_questionnaire(
+    client: AsyncClient,
+    sender: MemoryEmailSender,
+    owner: str = "owner@example.com",
+    **payload_overrides: Any,
+) -> dict[str, str]:
+    """Sign in, create a questionnaire, publish it, and return its id and slug."""
+    headers = await sign_in_headers(client, sender, owner)
+    created = await client.post(
+        "/questionnaires",
+        json=sample_questionnaire_payload(**payload_overrides),
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    published = await client.post(
+        f"/questionnaires/{created.json()['id']}/publish", headers=headers
+    )
+    assert published.status_code == 200, published.text
+    body = published.json()
+    return {"id": body["id"], "slug": body["public_slug"]}
+
+
+async def submit_answers(
+    client: AsyncClient, slug: str, answers: dict[str, Any] | None = None
+) -> str:
+    """Submit a response and return its id."""
+    response = await client.post(
+        f"/public/questionnaires/{slug}/responses",
+        json={"answers": answers if answers is not None else sample_answers()},
+    )
+    assert response.status_code == 202, response.text
+    return str(response.json()["response_id"])

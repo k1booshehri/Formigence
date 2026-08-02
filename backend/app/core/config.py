@@ -56,6 +56,33 @@ class Settings(BaseSettings):
     otp_request_rate_limit_per_email: str = "5/hour"
     otp_verify_rate_limit_per_ip: str = "20/hour"
     otp_verify_rate_limit_per_email: str = "10/hour"
+    # Deliberately stricter than the auth endpoints: submitting a response costs
+    # us an Anthropic API call, so it is the most abusable endpoint we expose.
+    response_submit_rate_limit_per_ip: str = "5/hour"
+
+    # --- CAPTCHA ---
+    # Off in dev. When enabled, submissions must carry a provider token.
+    captcha_enabled: bool = False
+    captcha_provider: Literal["turnstile"] = "turnstile"
+    turnstile_secret_key: str = ""
+    turnstile_verify_url: str = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+    captcha_timeout_seconds: float = Field(default=10.0, gt=0)
+
+    # --- Anthropic / analysis ---
+    anthropic_api_key: str = ""
+    # Pinned rather than tracking "latest" so a model change is a deploy, not a
+    # surprise. See README for the current-generation alternative.
+    anthropic_model: str = "claude-sonnet-4-6"
+    anthropic_max_tokens: int = Field(default=1000, gt=0)
+    anthropic_timeout_seconds: float = Field(default=60.0, gt=0)
+    # Total attempts = 1 + analysis_max_retries.
+    analysis_max_retries: int = Field(default=2, ge=0)
+    analysis_retry_base_delay_seconds: float = Field(default=1.0, gt=0)
+    analysis_retry_max_delay_seconds: float = Field(default=30.0, gt=0)
+
+    # --- Pagination ---
+    page_size_default: int = Field(default=20, gt=0)
+    page_size_max: int = Field(default=100, gt=0)
 
     @property
     def cors_origin_list(self) -> list[str]:

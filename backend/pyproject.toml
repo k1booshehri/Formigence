@@ -12,6 +12,9 @@ dependencies = [
     "alembic>=1.14.0",
     "asyncpg>=0.30.0",
     "pyjwt>=2.9.0",
+    "anthropic>=0.40.0",
+    # Direct dependency: the Turnstile verifier posts to Cloudflare's siteverify.
+    "httpx>=0.27.0",
     "argon2-cffi>=23.1.0",
     "slowapi>=0.1.9",
     # Imported directly by app/core/rate_limit.py for the per-email budget.
@@ -24,7 +27,6 @@ dependencies = [
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
-    "httpx>=0.27.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
 ]

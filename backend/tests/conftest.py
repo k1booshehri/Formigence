@@ -34,10 +34,15 @@ from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.core.db import get_session  # noqa: E402
-from app.core.deps import get_email_sender  # noqa: E402
+from app.core.deps import (  # noqa: E402
+    get_analyzer,
+    get_email_sender,
+    get_session_factory,
+)
 from app.main import app  # noqa: E402
 from app.models import Base  # noqa: E402
 from app.services.email import MemoryEmailSender  # noqa: E402
+from tests.fakes import FakeAnalyzer  # noqa: E402
 
 TEST_DATABASE_URL = settings.database_url
 
@@ -127,10 +132,17 @@ def email_sender() -> MemoryEmailSender:
     return MemoryEmailSender()
 
 
+@pytest.fixture
+def analyzer() -> FakeAnalyzer:
+    """Stands in for the Anthropic call. The real API is never contacted."""
+    return FakeAnalyzer()
+
+
 @pytest_asyncio.fixture
 async def client(
     session_factory: async_sessionmaker[AsyncSession],
     email_sender: MemoryEmailSender,
+    analyzer: FakeAnalyzer,
 ) -> AsyncIterator[AsyncClient]:
     async def override_get_session() -> AsyncIterator[AsyncSession]:
         async with session_factory() as session:
@@ -138,6 +150,9 @@ async def client(
 
     app.dependency_overrides[get_session] = override_get_session
     app.dependency_overrides[get_email_sender] = lambda: email_sender
+    # Background analysis opens its own sessions; point it at the test database.
+    app.dependency_overrides[get_session_factory] = lambda: session_factory
+    app.dependency_overrides[get_analyzer] = lambda: analyzer
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as http_client:

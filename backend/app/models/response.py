@@ -1,8 +1,10 @@
 """Respondent submissions.
 
-The table exists so the migration history is complete from the start, but no
-endpoints read or write it yet — submission and the AI analysis step are out of
-scope for this milestone.
+A row is created the moment answers are accepted (status `pending`) and is then
+advanced by the background analysis pipeline: `processing` while the Anthropic
+call is in flight, then `complete` with `ai_result` populated, or `failed`. The
+pipeline wraps the transition in try/finally so a row is never left stranded in
+`processing`.
 """
 
 from __future__ import annotations
