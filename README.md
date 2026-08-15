@@ -451,28 +451,30 @@ Out of scope for this milestone, by design:
 
 ## Verification status
 
-Every milestone so far has been built in an environment whose network policy
-blocks `pypi.org` and `registry.npmjs.org` (`403`,
-`x-deny-reason: host_not_allowed`). For this frontend milestone that is a
-sharper limit than before: **`pnpm install` cannot run**, so `tsc`, `eslint` and
-`vitest` cannot run either.
+The **backend is verified**: `ruff`, `mypy --strict` and the full test suite
+(154 tests) pass against a real PostgreSQL 16.
+
+The **frontend is not**. It was written in an environment whose network policy
+blocks `registry.npmjs.org` (`403`, `x-deny-reason: host_not_allowed`), so
+`pnpm install` never ran, and neither did `tsc`, `eslint` or `vitest`.
 
 | Check | Status |
 |-------|--------|
+| Backend `ruff check` / `ruff format --check` | **Passes** |
+| Backend `mypy app tests` (strict) | **Passes** |
+| Backend `pytest` | **Passes** — 154 tests |
 | Every `.ts`/`.tsx` file parses (TypeScript compiler API, 41 files) | **Passes** |
 | Every local import resolves, and every named import exists in its target | **Passes** |
 | No unused imports | **Passes** |
 | `pnpm typecheck` (`tsc -b`) | **Not run.** No `node_modules`. |
 | `pnpm lint` | **Not run.** No `node_modules`. |
 | `pnpm test` (Vitest) | **Not run.** No `node_modules`. |
-| End-to-end via docker compose + both dev servers | **Not run.** The Docker daemon is also unavailable, and the backend dependencies are equally uninstallable. |
-| Backend `ruff check` / `ruff format --check` | **Passes** (ruff runs standalone from a local cache) |
-| Backend `pytest` / `mypy` | **Not run** — unchanged from the previous milestone. |
+| End-to-end via docker compose + both dev servers | **Not run.** |
 
-What the static checks do and do not cover: they catch syntax errors, wrong
-import paths, and imports of names that do not exist — a real class of bug — but
-they say nothing about type correctness. Treat the frontend as **written but
-unverified**.
+What the frontend's static checks do and do not cover: they catch syntax
+errors, wrong import paths, and imports of names that do not exist — a real
+class of bug — but they say nothing about type correctness. Treat the frontend
+as **written but unverified**.
 
 The highest-risk unverified areas, in order:
 
@@ -486,5 +488,6 @@ The highest-risk unverified areas, in order:
 3. **Test selectors.** Role and label queries are written against the markup in
    this repo but have never been run.
 
-Run the [Checks](#4-checks) and [End to end](#5-end-to-end) sections on a
-machine with normal registry access to confirm.
+Run the frontend half of [Checks](#4-checks) and the [End to
+end](#5-end-to-end) section on a machine with normal registry access to
+confirm.

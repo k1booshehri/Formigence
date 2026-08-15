@@ -14,7 +14,8 @@ from collections.abc import AsyncIterator, Iterator
 DEFAULT_TEST_DB = "postgresql+asyncpg://formigence:formigence@localhost:5432/formigence_test"
 
 os.environ["ENVIRONMENT"] = "test"
-os.environ["SECRET_KEY"] = "test-only-secret-key"
+# At least 32 bytes: PyJWT warns below that for HS256.
+os.environ["SECRET_KEY"] = "test-only-secret-key-not-for-real-use"
 # Rate limits would otherwise trip during the multi-request auth tests. The
 # limiter itself is covered directly in tests/test_rate_limit.py.
 os.environ["RATE_LIMIT_ENABLED"] = "false"
