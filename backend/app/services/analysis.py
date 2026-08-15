@@ -233,7 +233,9 @@ class AnthropicResponseAnalyzer:
         retry_after = _retry_after_seconds(last_error)
         if retry_after is not None:
             return min(retry_after, settings.analysis_retry_max_delay_seconds)
-        base = settings.analysis_retry_base_delay_seconds * (2 ** (attempt - 1))
+        # `int ** int` is typed Any (a negative exponent would give a float), so
+        # pin the type here; `attempt` is always >= 1.
+        base: float = settings.analysis_retry_base_delay_seconds * (2 ** (attempt - 1))
         capped = min(base, settings.analysis_retry_max_delay_seconds)
         # Jitter so concurrent retries do not resynchronize into a burst.
         return capped * random.uniform(0.5, 1.0)
