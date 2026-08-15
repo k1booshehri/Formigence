@@ -19,3 +19,9 @@ class ErrorResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+# The shape FastAPI expects for a route's `responses=`. Routers annotate their
+# shared error maps with this: `dict` is invariant, so an inferred
+# `dict[int, dict[str, type[ErrorResponse]]]` is not assignable to it.
+OpenApiResponses = dict[int | str, dict[str, Any]]

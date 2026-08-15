@@ -14,12 +14,12 @@ from fastapi import APIRouter, Query, status
 
 from app.core.config import settings
 from app.core.deps import CurrentUser, ResponseServiceDep
-from app.schemas.common import ErrorResponse
+from app.schemas.common import ErrorResponse, OpenApiResponses
 from app.schemas.response import ResponseDetailOut, ResponsePage, ResponseSummaryOut
 
 router = APIRouter(prefix="/questionnaires", tags=["responses"])
 
-_COMMON_ERRORS = {
+_COMMON_ERRORS: OpenApiResponses = {
     status.HTTP_401_UNAUTHORIZED: {"model": ErrorResponse},
     status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
 }

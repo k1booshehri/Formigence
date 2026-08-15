@@ -11,7 +11,7 @@ import uuid
 from fastapi import APIRouter, Response, status
 
 from app.core.deps import CurrentUser, QuestionnaireServiceDep
-from app.schemas.common import ErrorResponse
+from app.schemas.common import ErrorResponse, OpenApiResponses
 from app.schemas.questionnaire import (
     QuestionnaireCreate,
     QuestionnaireOut,
@@ -20,7 +20,7 @@ from app.schemas.questionnaire import (
 
 router = APIRouter(prefix="/questionnaires", tags=["questionnaires"])
 
-_COMMON_ERRORS = {
+_COMMON_ERRORS: OpenApiResponses = {
     status.HTTP_401_UNAUTHORIZED: {"model": ErrorResponse},
     status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
 }

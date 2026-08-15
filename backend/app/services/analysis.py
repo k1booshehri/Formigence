@@ -23,9 +23,10 @@ import random
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import anthropic
+from anthropic.types import MessageParam, ToolChoiceToolParam, ToolParam
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -40,36 +41,44 @@ logger = logging.getLogger(__name__)
 
 TOOL_NAME = "submit_recommendation"
 
-RECOMMENDATION_TOOL: dict[str, Any] = {
-    "name": TOOL_NAME,
-    "description": (
-        "Submit the structured recommendation for this respondent. "
-        "Call this exactly once; it is the only way to return a result."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "recommendation": {
-                "type": "string",
-                "description": (
-                    "The recommendation for the respondent, written for them to read. "
-                    "Must not quote or paraphrase the analysis guide."
-                ),
+# `input_schema` is a hand-written JSON Schema document and the SDK's TypedDict
+# for it has varied across versions, so build the literal plainly and assert the
+# tool shape once here rather than annotating each nested level.
+RECOMMENDATION_TOOL: ToolParam = cast(
+    ToolParam,
+    {
+        "name": TOOL_NAME,
+        "description": (
+            "Submit the structured recommendation for this respondent. "
+            "Call this exactly once; it is the only way to return a result."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "recommendation": {
+                    "type": "string",
+                    "description": (
+                        "The recommendation for the respondent, written for them to read. "
+                        "Must not quote or paraphrase the analysis guide."
+                    ),
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": (
+                        "Why this recommendation follows from the answers and the guide."
+                    ),
+                },
+                "confidence": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high"],
+                    "description": "How confident you are given the answers provided.",
+                },
             },
-            "reasoning": {
-                "type": "string",
-                "description": ("Why this recommendation follows from the answers and the guide."),
-            },
-            "confidence": {
-                "type": "string",
-                "enum": ["low", "medium", "high"],
-                "description": "How confident you are given the answers provided.",
-            },
+            "required": ["recommendation", "reasoning", "confidence"],
+            "additionalProperties": False,
         },
-        "required": ["recommendation", "reasoning", "confidence"],
-        "additionalProperties": False,
     },
-}
+)
 
 
 @dataclass(frozen=True)
@@ -159,14 +168,17 @@ class AnthropicResponseAnalyzer:
     async def _attempt(
         self, system_prompt: str, user_message: str, usage_sink: UsageSink
     ) -> Recommendation:
+        messages: list[MessageParam] = [{"role": "user", "content": user_message}]
+        # Forced tool choice is what makes the output structured; see module docstring.
+        tool_choice: ToolChoiceToolParam = {"type": "tool", "name": TOOL_NAME}
         try:
             message = await self.client.messages.create(
                 model=self.model,
                 max_tokens=self.max_tokens,
                 system=system_prompt,
-                messages=[{"role": "user", "content": user_message}],
+                messages=messages,
                 tools=[RECOMMENDATION_TOOL],
-                tool_choice={"type": "tool", "name": TOOL_NAME},
+                tool_choice=tool_choice,
             )
         except anthropic.RateLimitError as exc:
             raise _RetryableError(f"rate limited: {exc}", exc) from exc
@@ -241,11 +253,12 @@ def _retry_after_seconds(error: Exception | None) -> float | None:
     if headers is None:
         return None
     raw = headers.get("retry-after")
-    if raw is None:
+    # `headers` reaches us through getattr, so narrow before converting.
+    if not isinstance(raw, str):
         return None
     try:
         return max(0.0, float(raw))
-    except (TypeError, ValueError):
+    except ValueError:
         return None
 
 

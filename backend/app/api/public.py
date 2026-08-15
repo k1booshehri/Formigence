@@ -15,7 +15,7 @@ from app.core.deps import (
     SessionFactoryDep,
 )
 from app.core.rate_limit import limiter
-from app.schemas.common import ErrorResponse
+from app.schemas.common import ErrorResponse, OpenApiResponses
 from app.schemas.questionnaire import PublicQuestionnaireOut
 from app.schemas.response import (
     ResponseStatusOut,
@@ -27,7 +27,7 @@ from app.services.answers import validate_answers
 
 router = APIRouter(prefix="/public", tags=["public"])
 
-_NOT_FOUND = {status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}}
+_NOT_FOUND: OpenApiResponses = {status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}}
 
 
 @router.get(

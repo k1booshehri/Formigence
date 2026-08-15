@@ -8,12 +8,14 @@ from app.core.config import settings
 from app.core.deps import AuthServiceDep
 from app.core.rate_limit import enforce_email_rate_limit, limiter
 from app.schemas.auth import OtpRequestIn, OtpVerifyIn, RefreshIn, TokenPair
-from app.schemas.common import ErrorResponse, MessageResponse
+from app.schemas.common import ErrorResponse, MessageResponse, OpenApiResponses
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-_UNAUTHORIZED_RESPONSE = {status.HTTP_401_UNAUTHORIZED: {"model": ErrorResponse}}
-_RATE_LIMITED_RESPONSE = {status.HTTP_429_TOO_MANY_REQUESTS: {"model": ErrorResponse}}
+_UNAUTHORIZED_RESPONSE: OpenApiResponses = {status.HTTP_401_UNAUTHORIZED: {"model": ErrorResponse}}
+_RATE_LIMITED_RESPONSE: OpenApiResponses = {
+    status.HTTP_429_TOO_MANY_REQUESTS: {"model": ErrorResponse}
+}
 
 
 @router.post(
