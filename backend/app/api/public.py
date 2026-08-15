@@ -14,6 +14,7 @@ from app.core.deps import (
     ResponseServiceDep,
     SessionFactoryDep,
 )
+from app.core.errors import HTTP_422_UNPROCESSABLE
 from app.core.rate_limit import limiter
 from app.schemas.common import ErrorResponse, OpenApiResponses
 from app.schemas.questionnaire import PublicQuestionnaireOut
@@ -57,7 +58,7 @@ async def get_public_questionnaire(
     responses={
         **_NOT_FOUND,
         status.HTTP_403_FORBIDDEN: {"model": ErrorResponse},
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTP_422_UNPROCESSABLE: {"model": ErrorResponse},
         status.HTTP_429_TOO_MANY_REQUESTS: {"model": ErrorResponse},
     },
 )

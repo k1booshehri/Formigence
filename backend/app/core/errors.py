@@ -18,6 +18,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
 
+# Starlette renamed 422 to HTTP_422_UNPROCESSABLE_CONTENT and deprecated the old
+# name; read the new one when it exists so neither Starlette version warns.
+HTTP_422_UNPROCESSABLE: int = getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422)
+
 
 class AppError(HTTPException):
     """HTTPException that also carries a stable, machine-readable error code."""
@@ -74,7 +78,7 @@ _STATUS_CODES: dict[int, str] = {
     status.HTTP_404_NOT_FOUND: "not_found",
     status.HTTP_405_METHOD_NOT_ALLOWED: "method_not_allowed",
     status.HTTP_409_CONFLICT: "conflict",
-    status.HTTP_422_UNPROCESSABLE_ENTITY: "validation_error",
+    HTTP_422_UNPROCESSABLE: "validation_error",
     status.HTTP_429_TOO_MANY_REQUESTS: "rate_limited",
 }
 
@@ -99,15 +103,32 @@ async def http_exception_handler(_request: Request, exc: Exception) -> JSONRespo
     )
 
 
+def _validation_details(exc: RequestValidationError) -> list[dict[str, Any]]:
+    """Reduce Pydantic's error list to the JSON-safe fields clients need.
+
+    `exc.errors()` is not directly serializable: an error raised by a custom
+    validator carries the original `ValueError` under `ctx["error"]`, and
+    `JSONResponse` renders with plain `json.dumps`. `input` is dropped as well —
+    it echoes the whole submitted payload back to the caller.
+    """
+    return [
+        {
+            "type": error.get("type", "value_error"),
+            "loc": list(error.get("loc", ())),
+            "msg": error.get("msg", "Invalid value"),
+        }
+        for error in exc.errors()
+    ]
+
+
 async def validation_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, RequestValidationError)
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=HTTP_422_UNPROCESSABLE,
         content=error_body(
             "validation_error",
             "Request payload failed validation",
-            # jsonable_encoder-safe: FastAPI already normalises this structure.
-            details=exc.errors(),
+            details=_validation_details(exc),
         ),
     )
 

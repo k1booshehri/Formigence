@@ -85,6 +85,27 @@ async def test_invalid_schemas_are_rejected_on_create(
     assert response.json()["error"]["code"] == "validation_error"
 
 
+async def test_validation_details_are_json_safe(
+    client: AsyncClient, email_sender: MemoryEmailSender
+) -> None:
+    """A custom validator's ValueError must not reach the JSON encoder."""
+    headers = await sign_in_headers(client, email_sender, OWNER)
+
+    response = await client.post(
+        "/questionnaires",
+        json=sample_questionnaire_payload(schema=[_scale(min=5, max=1)]),
+        headers=headers,
+    )
+
+    assert response.status_code == 422, response.text
+    details = response.json()["error"]["details"]
+    assert details, "the failing field should be reported"
+    for item in details:
+        assert set(item) == {"type", "loc", "msg"}
+        assert isinstance(item["loc"], list)
+    assert any("max must be greater than min" in item["msg"] for item in details)
+
+
 VALID_SCHEMAS: list[tuple[str, Any]] = [
     ("all-three-types", [_mc(id="a"), _scale(id="b"), _text(id="c")]),
     ("scale-with-labels", [_scale(min_label="Low", max_label="High")]),
