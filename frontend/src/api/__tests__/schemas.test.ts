@@ -5,13 +5,16 @@
  * and `backend/tests/test_submissions.py`, so a divergence between the two
  * layers shows up as a failure here.
  */
+import { zodResolver } from '@hookform/resolvers/zod';
 import { describe, expect, it } from 'vitest';
 
 import {
   answersSchemaFor,
   questionListSchema,
   questionSchema,
+  questionnaireFormSchema,
   type Question,
+  type QuestionnaireFormValues,
 } from '@/api/schemas';
 
 const multipleChoice = {
@@ -142,5 +145,59 @@ describe('answer validation mirrors the backend', () => {
     const schema = answersSchemaFor(unbounded);
     expect(schema.safeParse({ q1: 'x'.repeat(5000) }).success).toBe(true);
     expect(schema.safeParse({ q1: 'x'.repeat(5001) }).success).toBe(false);
+  });
+});
+
+/**
+ * The builder reads field errors by path, so where a message lands is part of
+ * the contract between Zod, the resolver and `QuestionCard` — not an internal
+ * detail. These pin it.
+ */
+describe('the builder resolver reports errors on precise paths', () => {
+  const resolve = zodResolver(questionnaireFormSchema);
+
+  async function errorsForQuestion(question: unknown): Promise<Record<string, unknown>> {
+    const values = {
+      title: 'Growth check',
+      description: '',
+      analysis_guide: '',
+      schema: [question],
+    } as unknown as QuestionnaireFormValues;
+    const { errors } = await resolve(values, undefined, {
+      fields: {},
+      shouldUseNativeValidation: false,
+      criteriaMode: 'firstError',
+    });
+    const questions = errors.schema as unknown as
+      | Record<number, Record<string, unknown> | undefined>
+      | undefined;
+    return questions?.[0] ?? {};
+  }
+
+  function messageOf(node: unknown): string | undefined {
+    if (typeof node !== 'object' || node === null) return undefined;
+    const message = (node as { message?: unknown }).message;
+    return typeof message === 'string' ? message : undefined;
+  }
+
+  it('reports a duplicate option against the option list', async () => {
+    const question = await errorsForQuestion({ ...multipleChoice, options: ['Online', 'Online'] });
+    expect(messageOf(question.options)).toBe('Options must be unique');
+  });
+
+  it('reports an empty option against that option', async () => {
+    const question = await errorsForQuestion({ ...multipleChoice, options: ['Online', ''] });
+    const options = question.options as unknown[];
+    expect(messageOf(options[1])).toBe('An option cannot be empty');
+  });
+
+  it('reports a missing prompt against the prompt', async () => {
+    const question = await errorsForQuestion({ ...multipleChoice, prompt: '' });
+    expect(messageOf(question.prompt)).toBe('A question prompt is required');
+  });
+
+  it('reports an impossible scale against the maximum', async () => {
+    const question = await errorsForQuestion({ ...scale, min: 5, max: 1 });
+    expect(messageOf(question.max)).toBe('The maximum must be greater than the minimum');
   });
 });

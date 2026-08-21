@@ -61,11 +61,7 @@ export const multipleChoiceQuestionSchema = z
       .max(50, 'At most 50 options'),
     allow_multiple: z.boolean(),
   })
-  .strict()
-  .refine((question) => new Set(question.options).size === question.options.length, {
-    message: 'Options must be unique',
-    path: ['options'],
-  });
+  .strict();
 
 export const scaleQuestionSchema = z
   .object({
@@ -77,15 +73,7 @@ export const scaleQuestionSchema = z
     min_label: labelSchema.nullish(),
     max_label: labelSchema.nullish(),
   })
-  .strict()
-  .refine((question) => question.max > question.min, {
-    message: 'The maximum must be greater than the minimum',
-    path: ['max'],
-  })
-  .refine((question) => question.max - question.min <= MAX_SCALE_SPAN, {
-    message: `The scale must not span more than ${MAX_SCALE_SPAN} points`,
-    path: ['max'],
-  });
+  .strict();
 
 export const shortTextQuestionSchema = z
   .object({
@@ -103,16 +91,47 @@ export const shortTextQuestionSchema = z
   .strict();
 
 /**
- * The discriminated union. `z.discriminatedUnion` cannot be used here because
- * the members carry `.refine()` wrappers (ZodEffects), which it rejects — so
- * this is a plain union, and the `type` literal on each member still gives
- * TypeScript a discriminated union to narrow on.
+ * The discriminated union, plus the cross-field rules.
+ *
+ * The rules live in one `superRefine` rather than on the members because
+ * `z.discriminatedUnion` only accepts plain objects, and dispatching on `type`
+ * is what makes the errors usable: a wrong option is reported against that
+ * question's `options`, where the builder shows it, instead of as one
+ * union-wide "invalid input" on the question as a whole.
  */
-export const questionSchema = z.union([
-  multipleChoiceQuestionSchema,
-  scaleQuestionSchema,
-  shortTextQuestionSchema,
-]);
+export const questionSchema = z
+  .discriminatedUnion('type', [
+    multipleChoiceQuestionSchema,
+    scaleQuestionSchema,
+    shortTextQuestionSchema,
+  ])
+  .superRefine((question, ctx) => {
+    if (question.type === 'multiple_choice') {
+      if (new Set(question.options).size !== question.options.length) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Options must be unique',
+          path: ['options'],
+        });
+      }
+      return;
+    }
+    if (question.type === 'scale') {
+      if (question.max <= question.min) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'The maximum must be greater than the minimum',
+          path: ['max'],
+        });
+      } else if (question.max - question.min > MAX_SCALE_SPAN) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `The scale must not span more than ${MAX_SCALE_SPAN} points`,
+          path: ['max'],
+        });
+      }
+    }
+  });
 
 /** QuestionList: min_length=1, max_length=MAX_QUESTIONS, unique ids */
 export const questionListSchema = z

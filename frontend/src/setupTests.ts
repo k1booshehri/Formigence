@@ -8,15 +8,43 @@ import { afterEach, vi } from 'vitest';
  * the working one jsdom provides. The app stores its tokens there, so point the
  * global back at jsdom's.
  */
-function ensureStorage(key: 'localStorage' | 'sessionStorage'): void {
-  let current: unknown;
+function readStorage(read: () => Storage | undefined): Storage | undefined {
   try {
-    current = globalThis[key];
+    return read();
   } catch {
-    current = undefined;
+    return undefined;
   }
-  if (current) return;
-  Object.defineProperty(globalThis, key, { value: window[key], configurable: true });
+}
+
+/** A Storage that behaves like the real one, for when neither realm offers one. */
+function createMemoryStorage(): Storage {
+  const entries = new Map<string, string>();
+  return {
+    get length(): number {
+      return entries.size;
+    },
+    clear(): void {
+      entries.clear();
+    },
+    getItem(key: string): string | null {
+      return entries.get(key) ?? null;
+    },
+    key(index: number): string | null {
+      return Array.from(entries.keys())[index] ?? null;
+    },
+    removeItem(key: string): void {
+      entries.delete(key);
+    },
+    setItem(key: string, value: string): void {
+      entries.set(key, String(value));
+    },
+  } as unknown as Storage;
+}
+
+function ensureStorage(key: 'localStorage' | 'sessionStorage'): void {
+  if (readStorage(() => globalThis[key])) return;
+  const storage = readStorage(() => window[key]) ?? createMemoryStorage();
+  Object.defineProperty(globalThis, key, { value: storage, configurable: true, writable: true });
 }
 
 ensureStorage('localStorage');
