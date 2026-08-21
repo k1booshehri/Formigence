@@ -120,7 +120,7 @@ function BuilderForm({ questionnaire, initialValues }: BuilderFormProps): JSX.El
   const isSaving = create.isPending || update.isPending;
 
   const isDirty = form.formState.isDirty;
-  useUnsavedChangesWarning(isDirty && !isSaving);
+  const { allowNextNavigation } = useUnsavedChangesWarning(isDirty && !isSaving);
 
   // Clear the "Saved" note as soon as the form is edited again.
   useEffect(() => {
@@ -141,6 +141,9 @@ function BuilderForm({ questionnaire, initialValues }: BuilderFormProps): JSX.El
       setSavedAt(Date.now());
     } else {
       const created = await create.mutateAsync(payload);
+      // The form is still dirty at this point, so the unsaved-changes blocker
+      // would otherwise prompt on the way to the page we just created.
+      allowNextNavigation();
       // Replace, so Back does not return to the empty "new" form.
       navigate(`/app/questionnaires/${created.id}/edit`, { replace: true });
     }

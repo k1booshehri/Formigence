@@ -56,6 +56,9 @@ export function useResponsePolling(
     enabled: Boolean(responseId),
     refetchInterval: (query) => {
       if (isTerminal(query.state.data?.status)) return false;
+      // Retries are handled below; once the query has given up, so do we —
+      // otherwise the interval would keep re-running a request we know fails.
+      if (query.state.status === 'error') return false;
       if (Date.now() - startedAtRef.current >= timeoutMs) return false;
       return intervalMs;
     },
