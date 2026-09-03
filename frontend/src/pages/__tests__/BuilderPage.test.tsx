@@ -186,9 +186,17 @@ describe('BuilderPage multiple-choice options', () => {
     await user.type(screen.getByLabelText('Option 1'), 'Online');
     await user.type(screen.getByLabelText('Option 2'), 'Online');
 
+    // The precondition, stated: without both values the rule under test never
+    // fires, and the failure would look like a missing message instead.
+    expect(screen.getByLabelText('Option 1')).toHaveValue('Online');
+    expect(screen.getByLabelText('Option 2')).toHaveValue('Online');
+
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
-    expect(await screen.findByText(/options must be unique/i)).toBeInTheDocument();
+    // Assert against every message the form shows, so a failure names what it
+    // complained about instead of only what it did not.
+    const messages = (await screen.findAllByRole('alert')).map((alert) => alert.textContent);
+    expect(messages).toContain('Options must be unique');
     expect(createQuestionnaire).not.toHaveBeenCalled();
   });
 
