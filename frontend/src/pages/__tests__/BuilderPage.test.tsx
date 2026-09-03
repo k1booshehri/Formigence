@@ -5,7 +5,6 @@ import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { api } from '@/api/endpoints';
-import { questionnaireFormSchema } from '@/api/schemas';
 import BuilderPage from '@/pages/BuilderPage';
 import { createTestQueryClient, withQueryClient } from '@/test/utils';
 
@@ -179,10 +178,6 @@ describe('BuilderPage multiple-choice options', () => {
 
   it('rejects duplicate options', async () => {
     const user = userEvent.setup();
-    // Temporary: the rule holds at the schema level (see schemas.test.ts) but
-    // not here, so watch what the form hands the validator — and whether it
-    // reaches the validator at all.
-    const validate = vi.spyOn(questionnaireFormSchema, 'parseAsync');
     renderBuilder();
 
     await user.type(screen.getByLabelText(/^title$/i), 'Growth check');
@@ -197,18 +192,6 @@ describe('BuilderPage multiple-choice options', () => {
     expect(screen.getByLabelText('Option 2')).toHaveValue('Online');
 
     await user.click(screen.getByRole('button', { name: /^save$/i }));
-
-    await waitFor(() => expect(validate).toHaveBeenCalled());
-    expect(validate.mock.calls[0]?.[0]).toMatchObject({
-      schema: [{ options: ['Online', 'Online'] }],
-    });
-
-    // What the validator concluded, which is the last unobserved step.
-    const outcome = await validate.mock.results[0]?.value.then(
-      () => 'accepted',
-      (error: { issues?: unknown }) => error.issues ?? error,
-    );
-    expect(outcome).toMatchObject([{ path: ['schema', 0, 'options'] }]);
 
     // Both halves in one assertion: a failure then prints what the form sent
     // (if it saved anyway) alongside every message it rendered.
