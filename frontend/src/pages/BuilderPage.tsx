@@ -105,7 +105,10 @@ function BuilderForm({ questionnaire, initialValues }: BuilderFormProps): JSX.El
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   const form = useForm<QuestionnaireFormValues>({
-    resolver: zodResolver(questionnaireFormSchema),
+    // Sync mode: nothing in the schema validates asynchronously, and Zod's
+    // async path has been seen to reject this schema without reporting a
+    // single issue — which the resolver then hands back as "valid, no values".
+    resolver: zodResolver(questionnaireFormSchema, undefined, { mode: 'sync' }),
     defaultValues: initialValues,
     mode: 'onSubmit',
   });
@@ -128,11 +131,27 @@ function BuilderForm({ questionnaire, initialValues }: BuilderFormProps): JSX.El
   }, [isDirty]);
 
   const onSubmit = form.handleSubmit(async (values) => {
+    // These values come from the resolver, and a validator that fails without
+    // reporting an issue hands back an empty object. Check before building a
+    // payload from them: a malformed request, or a crash on a missing field,
+    // would both look to the user like Save doing nothing at all.
+    const checked = questionnaireFormSchema.safeParse(values);
+    if (!checked.success) {
+      const [issue] = checked.error.issues;
+      form.setError('root', {
+        type: 'validate',
+        message: issue
+          ? `${issue.path.join('.')}: ${issue.message}`
+          : 'This questionnaire could not be validated.',
+      });
+      return;
+    }
+
     const payload = {
-      title: values.title,
-      description: values.description.trim() ? values.description : null,
-      analysis_guide: values.analysis_guide,
-      schema: values.schema.map(serializeQuestion),
+      title: checked.data.title,
+      description: checked.data.description.trim() ? checked.data.description : null,
+      analysis_guide: checked.data.analysis_guide,
+      schema: checked.data.schema.map(serializeQuestion),
     };
 
     // `.catch(null)` on the mutation alone: its rejection is already rendered
@@ -191,6 +210,12 @@ function BuilderForm({ questionnaire, initialValues }: BuilderFormProps): JSX.El
             </Button>
           </div>
         </div>
+
+        {form.formState.errors.root?.message && (
+          <Alert variant="destructive" title="Could not save">
+            <p>{form.formState.errors.root.message}</p>
+          </Alert>
+        )}
 
         {saveError && <SaveError error={saveError} />}
 
