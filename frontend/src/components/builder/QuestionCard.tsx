@@ -60,6 +60,44 @@ function questionError(
   return errorMessageOf(questionErrorNode(errors, index, key));
 }
 
+/** The keys each type's controls display an error for. */
+const CONTROLLED_KEYS: Record<QuestionType, string[]> = {
+  multiple_choice: ['prompt', 'options'],
+  scale: ['prompt', 'min', 'max', 'min_label', 'max_label'],
+  short_text: ['prompt', 'max_length'],
+};
+
+/** Every message under a node, keyed by its path relative to that node. */
+function collectMessages(node: unknown, path: string, into: Map<string, string>): void {
+  if (typeof node !== 'object' || node === null) return;
+  const message = errorMessageOf(node);
+  if (message) into.set(path, message);
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    if (key === 'message' || key === 'type' || key === 'types' || key === 'ref') continue;
+    collectMessages(value, path ? `${path}.${key}` : key, into);
+  }
+}
+
+/**
+ * Messages no control on this card would show.
+ *
+ * Every rule the form enforces has to appear somewhere: an error on the
+ * question as a whole, or on a key with no editor, would otherwise block Save
+ * with nothing on screen to explain it.
+ */
+function unshownMessages(
+  errors: FieldErrors<QuestionnaireFormValues>,
+  index: number,
+  type: QuestionType,
+): string[] {
+  const found = new Map<string, string>();
+  collectMessages(questionNode(errors, index), '', found);
+  const shown = new Set(CONTROLLED_KEYS[type]);
+  return [...found.entries()]
+    .filter(([path]) => !shown.has(path.split('.')[0] ?? ''))
+    .map(([, message]) => message);
+}
+
 interface QuestionCardProps {
   index: number;
   total: number;
@@ -79,19 +117,16 @@ export function QuestionCard({
 }: QuestionCardProps): JSX.Element {
   const { register, formState } = useFormContext<QuestionnaireFormValues>();
   const position = index + 1;
-  // An error reported against the question as a whole rather than one of its
-  // fields — a rule spanning two fields, say. Without this the form would
-  // refuse to save and show nothing, which is the worst outcome of the three.
-  const cardError = errorMessageOf(questionNode(formState.errors, index));
+  const unexplained = unshownMessages(formState.errors, index, type);
 
   return (
     <Card>
       <CardContent className="space-y-4 p-4">
-        {cardError && (
-          <p role="alert" className="text-sm font-medium text-destructive">
-            {cardError}
+        {unexplained.map((message) => (
+          <p key={message} role="alert" className="text-sm font-medium text-destructive">
+            {message}
           </p>
-        )}
+        ))}
         <div className="flex items-center gap-2">
           <Badge variant="outline">
             {position}. {QUESTION_TYPE_LABELS[type]}
@@ -217,6 +252,20 @@ function MultipleChoiceEditor({ index }: { index: number }): JSX.Element {
             {listError}
           </p>
         )}
+        {/* Errors past the last input, so nothing about the list stays hidden. */}
+        {Array.isArray(errorNode) &&
+          errorNode.slice(options.length).map((entry, extraIndex) => {
+            const message = errorMessageOf(entry);
+            return message ? (
+              <p
+                key={`extra-${extraIndex}`}
+                role="alert"
+                className="text-sm font-medium text-destructive"
+              >
+                {message}
+              </p>
+            ) : null;
+          })}
         <Button
           type="button"
           variant="outline"

@@ -135,12 +135,17 @@ function BuilderForm({ questionnaire, initialValues }: BuilderFormProps): JSX.El
       schema: values.schema.map(serializeQuestion),
     };
 
+    // `.catch(null)` on the mutation alone: its rejection is already rendered
+    // from mutation state, and catching only here keeps any other failure in
+    // this handler from being swallowed with it.
     if (questionnaire) {
-      const saved = await update.mutateAsync(payload);
+      const saved = await update.mutateAsync(payload).catch(() => null);
+      if (saved === null) return;
       form.reset(toFormValues(saved));
       setSavedAt(Date.now());
     } else {
-      const created = await create.mutateAsync(payload);
+      const created = await create.mutateAsync(payload).catch(() => null);
+      if (created === null) return;
       // The form is still dirty at this point, so the unsaved-changes blocker
       // would otherwise prompt on the way to the page we just created.
       allowNextNavigation();
@@ -157,9 +162,10 @@ function BuilderForm({ questionnaire, initialValues }: BuilderFormProps): JSX.El
     <FormProvider {...form}>
       <form
         onSubmit={(event) => {
-          // mutateAsync rejects on failure; the error is rendered from
-          // mutation state, so stop it becoming an unhandled rejection.
-          void onSubmit(event).catch(() => undefined);
+          // Deliberately unguarded: a rejection here is a bug in the handler,
+          // not an API failure, and swallowing it would leave Save looking
+          // like it does nothing at all.
+          void onSubmit(event);
         }}
         className="space-y-6"
         noValidate
