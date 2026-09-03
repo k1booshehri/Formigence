@@ -333,6 +333,7 @@ docker-compose.yml
 
 | Route | Auth | What it is |
 |-------|------|------------|
+| `/` | — | Landing page. Its calls to action point at the app instead of sign-in once a session exists. |
 | `/login` | — | Email step, then code step. Resend has a 30s cooldown. |
 | `/app/questionnaires` | Session | Dashboard: list, create, delete |
 | `/app/questionnaires/new` | Session | Builder |

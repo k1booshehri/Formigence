@@ -9,6 +9,7 @@ import { Navigate, createBrowserRouter } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import BuilderPage from '@/pages/BuilderPage';
+import LandingPage from '@/pages/LandingPage';
 import LoginPage from '@/pages/LoginPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import PublicQuestionnairePage from '@/pages/PublicQuestionnairePage';
@@ -18,7 +19,9 @@ import ResponsesPage from '@/pages/ResponsesPage';
 import { RootBoundary } from '@/components/RootBoundary';
 
 export const router = createBrowserRouter([
-  { path: '/', element: <Navigate to="/app/questionnaires" replace /> },
+  // `/` is the marketing page, signed in or not: someone arriving at the root
+  // gets told what this is, rather than being dropped on a sign-in form.
+  { path: '/', element: <LandingPage />, errorElement: <RootBoundary /> },
   { path: '/login', element: <LoginPage />, errorElement: <RootBoundary /> },
   {
     path: '/app',
