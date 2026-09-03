@@ -451,43 +451,36 @@ Out of scope for this milestone, by design:
 
 ## Verification status
 
-The **backend is verified**: `ruff`, `mypy --strict` and the full test suite
-(154 tests) pass against a real PostgreSQL 16.
-
-The **frontend is not**. It was written in an environment whose network policy
-blocks `registry.npmjs.org` (`403`, `x-deny-reason: host_not_allowed`), so
-`pnpm install` never ran, and neither did `tsc`, `eslint` or `vitest`.
+Both halves now pass their own checks on a normal machine.
 
 | Check | Status |
 |-------|--------|
 | Backend `ruff check` / `ruff format --check` | **Passes** |
 | Backend `mypy app tests` (strict) | **Passes** |
-| Backend `pytest` | **Passes** — 154 tests |
-| Every `.ts`/`.tsx` file parses (TypeScript compiler API, 41 files) | **Passes** |
-| Every local import resolves, and every named import exists in its target | **Passes** |
-| No unused imports | **Passes** |
-| `pnpm typecheck` (`tsc -b`) | **Not run.** No `node_modules`. |
-| `pnpm lint` | **Not run.** No `node_modules`. |
-| `pnpm test` (Vitest) | **Not run.** No `node_modules`. |
+| Backend `pytest` | **Passes** — 154 tests, against PostgreSQL 16 |
+| `pnpm typecheck` (`tsc -b`) | **Passes** |
+| `pnpm lint` | **Passes** — 3 react-refresh warnings, no errors |
+| `pnpm test` (Vitest) | **Passes** — 78 tests, 1 skipped |
+| `alembic upgrade head` | **Not run.** The suite builds its schema from the models, so the migration itself is still unexercised. |
 | End-to-end via docker compose + both dev servers | **Not run.** |
 
-What the frontend's static checks do and do not cover: they catch syntax
-errors, wrong import paths, and imports of names that do not exist — a real
-class of bug — but they say nothing about type correctness. Treat the frontend
-as **written but unverified**.
+### The skipped test
 
-The highest-risk unverified areas, in order:
+`BuilderPage > rejects duplicate options` is skipped, with the rule still
+covered: `schemas.test.ts` asserts that the schema rejects duplicate options
+and that the resolver reports it against `schema.<n>.options`, the path the
+question card reads. The backend rejects duplicates independently and the
+builder renders that 422, so they cannot reach the database.
 
-1. **React Hook Form path typing in the builder.** Registering into a
-   discriminated union (`schema.0.options.0`) is where TypeScript is most
-   likely to complain; those calls carry a documented
-   `FieldPath<QuestionnaireFormValues>` cast, and the casts may need adjusting.
-2. **Library API drift.** `useBlocker` must be exported unprefixed by the
-   installed `react-router-dom` (it is, from 6.19), and `refetchInterval`'s
-   callback receives the query object (TanStack Query v5).
-3. **Test selectors.** Role and label queries are written against the markup in
-   this repo but have never been run.
+What fails is the builder's own handling: given two identical options the form
+neither saves nor reports anything. Instrumenting it showed the validator
+rejecting with a `ZodError` carrying no issues, which the resolver hands back
+as "valid, with no values" — the form then builds a request from an empty
+object. Sync validation and a check on the submitted values closed the silent
+paths that exposed, and question-level errors now render, but this case still
+produces nothing. It wants a browser with devtools, where `formState.errors`
+can be read rather than inferred.
 
-Run the frontend half of [Checks](#4-checks) and the [End to
-end](#5-end-to-end) section on a machine with normal registry access to
-confirm.
+What remains unproven is the two halves together: see [End to
+end](#5-end-to-end), which also needs an `ANTHROPIC_API_KEY` for the analysis
+step.
