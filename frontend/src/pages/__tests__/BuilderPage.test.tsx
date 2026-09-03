@@ -203,6 +203,13 @@ describe('BuilderPage multiple-choice options', () => {
       schema: [{ options: ['Online', 'Online'] }],
     });
 
+    // What the validator concluded, which is the last unobserved step.
+    const outcome = await validate.mock.results[0]?.value.then(
+      () => 'accepted',
+      (error: { issues?: unknown }) => error.issues ?? error,
+    );
+    expect(outcome).toMatchObject([{ path: ['schema', 0, 'options'] }]);
+
     // Both halves in one assertion: a failure then prints what the form sent
     // (if it saved anyway) alongside every message it rendered.
     await waitFor(() => {
