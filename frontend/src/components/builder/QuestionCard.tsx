@@ -27,16 +27,23 @@ import { QUESTION_TYPE_LABELS } from '@/lib/questions';
 
 type FormPath = FieldPath<QuestionnaireFormValues>;
 
-/** Read one question's error node without fighting the union's error type. */
+/** Read one question's whole error node, without fighting the union's error type. */
+function questionNode(
+  errors: FieldErrors<QuestionnaireFormValues>,
+  index: number,
+): Record<string, unknown> | undefined {
+  const perQuestion = errors.schema as unknown as
+    | Record<number, Record<string, unknown> | undefined>
+    | undefined;
+  return perQuestion?.[index];
+}
+
 function questionErrorNode(
   errors: FieldErrors<QuestionnaireFormValues>,
   index: number,
   key: string,
 ): unknown {
-  const perQuestion = errors.schema as unknown as
-    | Record<number, Record<string, unknown> | undefined>
-    | undefined;
-  return perQuestion?.[index]?.[key];
+  return questionNode(errors, index)?.[key];
 }
 
 function errorMessageOf(node: unknown): string | undefined {
@@ -72,10 +79,19 @@ export function QuestionCard({
 }: QuestionCardProps): JSX.Element {
   const { register, formState } = useFormContext<QuestionnaireFormValues>();
   const position = index + 1;
+  // An error reported against the question as a whole rather than one of its
+  // fields — a rule spanning two fields, say. Without this the form would
+  // refuse to save and show nothing, which is the worst outcome of the three.
+  const cardError = errorMessageOf(questionNode(formState.errors, index));
 
   return (
     <Card>
       <CardContent className="space-y-4 p-4">
+        {cardError && (
+          <p role="alert" className="text-sm font-medium text-destructive">
+            {cardError}
+          </p>
+        )}
         <div className="flex items-center gap-2">
           <Badge variant="outline">
             {position}. {QUESTION_TYPE_LABELS[type]}

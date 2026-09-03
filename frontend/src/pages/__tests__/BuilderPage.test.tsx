@@ -193,11 +193,17 @@ describe('BuilderPage multiple-choice options', () => {
 
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
-    // Assert against every message the form shows, so a failure names what it
-    // complained about instead of only what it did not.
-    const messages = (await screen.findAllByRole('alert')).map((alert) => alert.textContent);
-    expect(messages).toContain('Options must be unique');
-    expect(createQuestionnaire).not.toHaveBeenCalled();
+    // Both halves in one assertion: a failure then prints what the form sent
+    // (if it saved anyway) alongside every message it rendered.
+    await waitFor(() => {
+      expect({
+        sent: createQuestionnaire.mock.calls,
+        messages: screen.queryAllByRole('alert').map((alert) => alert.textContent),
+      }).toEqual({
+        sent: [],
+        messages: expect.arrayContaining(['Options must be unique']),
+      });
+    });
   });
 
   it('rejects an empty option', async () => {
