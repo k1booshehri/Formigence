@@ -432,6 +432,58 @@ is therefore only possible once at least one question exists.
 
 ---
 
+## Deploying
+
+The frontend is a static bundle and goes anywhere. The backend is not
+serverless-shaped: analysis runs *after* the response is sent, so the process
+has to outlive the request. On a platform that freezes or discards the instance
+once a response is returned, submissions would sit in `processing` until the
+respondent's poll times out. So: static host for the frontend, ordinary
+long-running host for the backend.
+
+### Backend
+
+`backend/Dockerfile` builds it, and works unchanged on Fly.io, Render or
+Railway. Set these:
+
+| Variable | Notes |
+|----------|-------|
+| `DATABASE_URL` | Must be an **asyncpg** URL: `postgresql+asyncpg://…`. Managed Postgres hands out `postgres://…`, so rewrite the scheme. Use the pooled connection string where the provider offers one. |
+| `SECRET_KEY` | 32+ bytes. `python -c "import secrets; print(secrets.token_urlsafe(64))"` |
+| `ANTHROPIC_API_KEY` | Analysis fails without it; everything else works. |
+| `CORS_ORIGINS` | The frontend's origin, exactly. Comma-separated, no wildcards, so Vercel preview URLs need adding individually or a stable alias. |
+| `ENVIRONMENT` | `production` |
+
+Run migrations as a **release step**, not on start — otherwise every instance
+migrates at once on a scaled deploy. On Fly that is
+`release_command = "alembic upgrade head"` under `[deploy]`; on Render it is the
+Pre-Deploy Command. Deploying for the first time, run it by hand against the
+production database:
+
+```bash
+DATABASE_URL='postgresql+asyncpg://…' uv run alembic upgrade head
+```
+
+`/health` is the liveness probe.
+
+### Frontend on Vercel
+
+Set the project's **Root Directory** to `frontend`. Vercel offers to treat this
+repo as two services and then blocks the deploy until a root `vercel.json`
+describes both; pointing it at `frontend` sidesteps that, and the backend does
+not belong there anyway. `frontend/vercel.json` supplies the SPA fallback, which
+deep links like `/q/:slug` need.
+
+One environment variable: `VITE_API_BASE_URL`, the backend's public URL with no
+trailing slash. Vite bakes it into the bundle at build time, so changing it
+means redeploying, and it must be set before the first build or the app will
+call `localhost:8000` in production.
+
+Deploy the backend first — its URL is an input to the frontend build, and the
+frontend's origin is an input to `CORS_ORIGINS`.
+
+---
+
 ## What is not built
 
 Out of scope for this milestone, by design:
