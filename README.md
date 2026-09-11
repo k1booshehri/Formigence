@@ -441,6 +441,40 @@ once a response is returned, submissions would sit in `processing` until the
 respondent's poll times out. So: static host for the frontend, ordinary
 long-running host for the backend.
 
+### Database
+
+Any managed Postgres 13 or newer. The schema needs nothing installed first —
+no extensions, and ids are generated in Python rather than by the database — so
+an empty database is all it wants. Local development uses 16 (see
+`docker-compose.yml`), which is the version the schema has actually been run
+against.
+
+Either the backend host's own offering (Fly Postgres, Render Postgres, Railway)
+or a standalone provider (Neon, Supabase) is fine. Two things reliably go wrong:
+
+**The connection string.** Providers hand out `postgres://user:pass@host/db`,
+and this backend talks asyncpg, so the scheme has to become
+`postgresql+asyncpg://`. If the string carries `?sslmode=require`, that
+parameter is psycopg's — asyncpg rejects it and the process dies at startup with
+an unexpected-keyword error. Use `?ssl=require` instead:
+
+```
+postgres://u:p@host/db?sslmode=require      ← what the provider gives you
+postgresql+asyncpg://u:p@host/db?ssl=require ← what DATABASE_URL wants
+```
+
+**Pooled connection strings.** Neon and Supabase offer a PgBouncer endpoint
+alongside the direct one. PgBouncer in transaction mode breaks asyncpg's
+prepared statements, which surfaces as intermittent `prepared statement
+_asyncpg_stmt_… does not exist` errors under load rather than a clean failure at
+boot. Use the **direct** (session-mode) string — on Supabase that is port 5432,
+not 6543; on Neon it is the host without `-pooler`. A pooled string would need
+`statement_cache_size=0` passed to the engine, which is a code change and is not
+wired up.
+
+Then create the schema — `alembic upgrade head`, reading the same `DATABASE_URL`
+the app does. Details under [Backend](#backend) below.
+
 ### Backend
 
 `backend/Dockerfile` builds it, and works unchanged on Fly.io, Render or
@@ -448,7 +482,7 @@ Railway. Set these:
 
 | Variable | Notes |
 |----------|-------|
-| `DATABASE_URL` | Must be an **asyncpg** URL: `postgresql+asyncpg://…`. Managed Postgres hands out `postgres://…`, so rewrite the scheme. Use the pooled connection string where the provider offers one. |
+| `DATABASE_URL` | `postgresql+asyncpg://…`, direct connection, `?ssl=require` if TLS is enforced — see [Database](#database). |
 | `SECRET_KEY` | 32+ bytes. `python -c "import secrets; print(secrets.token_urlsafe(64))"` |
 | `ANTHROPIC_API_KEY` | Analysis fails without it; everything else works. |
 | `CORS_ORIGINS` | The frontend's origin, exactly. Comma-separated, no wildcards, so Vercel preview URLs need adding individually or a stable alias. |
@@ -461,8 +495,13 @@ Pre-Deploy Command. Deploying for the first time, run it by hand against the
 production database:
 
 ```bash
+cd backend
 DATABASE_URL='postgresql+asyncpg://…' uv run alembic upgrade head
 ```
+
+It reads `DATABASE_URL` through the same settings object the app does, so
+whatever works for one works for the other — which makes this a useful way to
+check the string before the first deploy depends on it.
 
 `/health` is the liveness probe.
 
