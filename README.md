@@ -505,6 +505,63 @@ check the string before the first deploy depends on it.
 
 `/health` is the liveness probe.
 
+#### Render, concretely
+
+**1. Create the database.** New → Postgres. Name `formigence-db`, database
+`formigence`, Postgres 16, and note the **region** — the web service has to
+match it or the internal connection string will not resolve. Once it is up,
+the dashboard shows an *Internal* and an *External* Database URL; both are
+needed, for different things.
+
+**2. Create the schema, from your machine, over the External URL.** Rewrite the
+scheme, add `ssl=require` (the external endpoint enforces TLS):
+
+```bash
+cd backend
+DATABASE_URL='postgresql+asyncpg://USER:PASS@dpg-xxxx.oregon-postgres.render.com/formigence?ssl=require' \
+  uv run alembic upgrade head
+```
+
+`uv run alembic current` should then report `0002`. This is also the cheapest
+test of a connection string: if it works here it will work for the app.
+
+**3. Create the web service.** New → Web Service, point it at this repo, and set:
+
+| Setting | Value |
+|---------|-------|
+| Language | Docker |
+| Root Directory | `backend` |
+| Dockerfile Path | `./Dockerfile` |
+| Region | the database's region |
+| Health Check Path | `/health` |
+| Pre-Deploy Command | `alembic upgrade head` (paid instances only — on free, run step 2 by hand each time a migration is added) |
+
+Environment variables: `DATABASE_URL` (the **Internal** URL, scheme rewritten to
+`postgresql+asyncpg://`, no `ssl` parameter — it never leaves Render's network),
+`SECRET_KEY`, `ANTHROPIC_API_KEY`, `ENVIRONMENT=production`. Leave
+`CORS_ORIGINS` until the frontend exists.
+
+**4. Check it.** `curl https://<service>.onrender.com/health` returns
+`{"status":"ok"}`, and `/docs` renders the API.
+
+**5. Deploy the frontend** (see below), with `VITE_API_BASE_URL` set to that
+`https://<service>.onrender.com`.
+
+**6. Close the loop.** Set `CORS_ORIGINS` on the Render service to the Vercel
+origin and save; it redeploys. Until this is set the browser blocks every
+request, and the failure looks like a network error rather than a CORS one.
+
+Two Render-specific caveats. Free Postgres is **deleted after 30 days**. And a
+free web service spins down after about 15 minutes idle, which can kill an
+analysis that is still running — the same failure that ruled out serverless, so
+a paid instance is the point at which this app actually behaves.
+
+**Signing in on a deployed instance:** `email_backend` only has a console
+implementation, so the one-time code is written to the service's logs rather
+than emailed. Open the Logs tab, submit the email, read the code. A real sender
+behind `EmailSender` is the gap between this and something you can hand to
+someone else.
+
 ### Frontend on Vercel
 
 Set the project's **Root Directory** to `frontend`. Vercel offers to treat this
